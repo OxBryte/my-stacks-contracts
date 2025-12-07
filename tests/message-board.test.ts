@@ -100,7 +100,7 @@ describe("Messaging Contract Tests", () => {
         address1
       );
 
-      expect(hasMessage.result).toStrictEqual(Cl.bool(true));
+      expect(hasMessage.result).toBeOk(Cl.bool(true));
     });
 
     it("tracks messages for sender", () => {
@@ -120,7 +120,7 @@ describe("Messaging Contract Tests", () => {
         address1
       );
 
-      expect(sentMessage.result).toStrictEqual(Cl.bool(true));
+      expect(sentMessage.result).toBeOk(Cl.bool(true));
     });
   });
 
@@ -626,7 +626,7 @@ describe("Messaging Contract Tests", () => {
         deployer
       );
 
-      expect(result.result).toStrictEqual(Cl.uint(2));
+      expect(result.result).toBeOk(Cl.uint(2));
     });
 
     it("prevents non-owner from getting total messages", () => {

@@ -53,12 +53,6 @@
         read: false,
       })
       
-      ;; Track message for recipient
-      (map-set recipient-messages (recipient, id) true)
-      
-      ;; Track message for sender
-      (map-set sender-messages (sender, id) true)
-      
       ;; Update message count
       (var-set message-count id)
       
@@ -121,12 +115,6 @@
       ;; Delete from messages map
       (map-delete messages message-id)
       
-      ;; Delete from recipient tracking
-      (map-delete recipient-messages ((get recipient message-tuple), message-id))
-      
-      ;; Delete from sender tracking
-      (map-delete sender-messages ((get sender message-tuple), message-id))
-      
       ;; Emit event
       (print {
         event: "message-deleted",
@@ -152,12 +140,18 @@
 
 ;; Read-only function to check if a message exists for a recipient
 (define-read-only (has-message (recipient principal) (message-id uint))
-  (map-get? recipient-messages (recipient, message-id))
+  (match (map-get? messages message-id)
+    message-tuple (ok (is-eq recipient (get recipient message-tuple)))
+    (ok false)
+  )
 )
 
 ;; Read-only function to check if a message was sent by a sender
 (define-read-only (sent-message (sender principal) (message-id uint))
-  (map-get? sender-messages (sender, message-id))
+  (match (map-get? messages message-id)
+    message-tuple (ok (is-eq sender (get sender message-tuple)))
+    (ok false)
+  )
 )
 
 ;; Read-only function to get message sender
@@ -218,8 +212,8 @@
 
 ;; Admin function to get total message count (contract owner only)
 (define-read-only (get-total-messages)
-  (begin
-    (asserts! (is-eq contract-caller CONTRACT_OWNER) ERR_NOT_CONTRACT_OWNER)
-    (var-get message-count)
+  (if (is-eq contract-caller CONTRACT_OWNER)
+    (ok (var-get message-count))
+    (err u1006)
   )
 )
