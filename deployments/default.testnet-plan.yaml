@@ -38,7 +38,7 @@ plan:
         - contract-publish:
             contract-name: message-board
             expected-sender: ST3YGA4JT7289RWGB9SDXTNRCN2FQCRVFSR36FH8Q
-            cost: 37130
+            cost: 56810
             path: contracts/message-board.clar
             anchor-block-only: true
             clarity-version: 4
