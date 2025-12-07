@@ -141,3 +141,68 @@
     (var-get message-count)
   ))
 )
+
+;; Public function to edit a message (only by author)
+(define-public (edit-message (id uint) (new-content (string-utf8 280)))
+  (match (map-get? messages id)
+    message-tuple (begin
+      (asserts! (is-eq contract-caller (get author message-tuple)) ERR_NOT_MESSAGE_AUTHOR)
+      (map-set messages id {
+        message: new-content,
+        author: (get author message-tuple),
+        time: (get time message-tuple),
+      })
+      (ok true)
+    )
+    ERR_MESSAGE_NOT_FOUND
+  )
+)
+
+;; Public function to delete a message (by author or contract owner)
+(define-public (delete-message (id uint))
+  (match (map-get? messages id)
+    message-tuple (begin
+      (asserts! 
+        (or 
+          (is-eq contract-caller (get author message-tuple))
+          (is-eq contract-caller CONTRACT_OWNER)
+        )
+        ERR_NOT_MESSAGE_AUTHOR
+      )
+      (map-delete messages id)
+      (ok true)
+    )
+    ERR_MESSAGE_NOT_FOUND
+  )
+)
+
+;; Read-only function to get message content
+(define-read-only (get-message-content (id uint))
+  (match (map-get? messages id)
+    message-tuple (ok (get message message-tuple))
+    (err u1006)
+  )
+)
+
+;; Read-only function to get message timestamp
+(define-read-only (get-message-time (id uint))
+  (match (map-get? messages id)
+    message-tuple (ok (get time message-tuple))
+    (err u1006)
+  )
+)
+
+;; Read-only function to check if a principal is the author of a message
+(define-read-only (is-message-author (id uint) (check-author principal))
+  (match (map-get? messages id)
+    message-tuple (ok (is-eq check-author (get author message-tuple)))
+    (ok false)
+  )
+)
+
+;; Read-only function to get contract sBTC balance
+(define-read-only (get-contract-balance)
+  (unwrap-panic (contract-call? 'SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-token
+    get-balance current-contract
+  ))
+)
