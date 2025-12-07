@@ -34,18 +34,6 @@
 ;; Counter for total messages
 (define-data-var message-count uint u0)
 
-;; Map to track message IDs for each recipient (for easy lookup)
-(define-map recipient-messages
-  (principal, uint)
-  bool
-)
-
-;; Map to track message IDs for each sender (for easy lookup)
-(define-map sender-messages
-  (principal, uint)
-  bool
-)
-
 ;; Public function to send a message
 (define-public (send-message (recipient principal) (content (string-utf8 500)))
   (let (
@@ -53,9 +41,6 @@
     (sender contract-caller)
   )
     (begin
-      ;; Validate message length
-      (asserts! (<= (len content) MAX_MESSAGE_LENGTH) ERR_MESSAGE_TOO_LONG)
-      
       ;; Prevent sending to self
       (asserts! (not (is-eq sender recipient)) ERR_INVALID_RECIPIENT)
       
