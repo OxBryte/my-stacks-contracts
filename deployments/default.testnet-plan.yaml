@@ -33,13 +33,3 @@ plan:
             path: "./.cache/requirements/SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-deposit.clar"
             clarity-version: 3
       epoch: "3.0"
-    - id: 1
-      transactions:
-        - contract-publish:
-            contract-name: message-board
-            expected-sender: ST3YGA4JT7289RWGB9SDXTNRCN2FQCRVFSR36FH8Q
-            cost: 56810
-            path: contracts/message-board.clar
-            anchor-block-only: true
-            clarity-version: 4
-      epoch: "3.3"

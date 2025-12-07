@@ -1,208 +1,240 @@
-;; title: message-board
-;; version:
-;; summary:
-;; description:
+;; title: messaging
+;; version: 1.0.0
+;; summary: A decentralized messaging contract for Stacks
+;; description: Allows users to send and receive messages on the Stacks blockchain
 
-;; traits
-;;
+;; Constants
+(define-constant MAX_MESSAGE_LENGTH 500)
+(define-constant MAX_MESSAGES_PER_USER 1000)
 
-;; token definitions
-;;
-
-;; constants
-;;
-
-;; data vars
-;;
-
-;; data maps
-;;
-
-;; public functions
-;;
-
-;; read only functions
-;;
-
-;; private functions
-;;
-
-;; Defeine constants
-(define-constant MAX_MESSAGE_LENGTH 100)
-(define-constant MAX_MESSAGES 100)
-(define-constant MESSAGE_BOARD_NAME "Message Board")
-(define-constant MESSAGE_BOARD_DESCRIPTION "A message board for the community")
-(define-constant MESSAGE_BOARD_ICON "https://example.com/icon.png")
-(define-constant MESSAGE_BOARD_COLOR "https://example.com/color.png")
-(define-constant MESSAGE_BOARD_BACKGROUND "https://example.com/background.png")
-(define-constant MESSAGE_BOARD_TEXT "https://example.com/text.png")
-(define-constant MESSAGE_BOARD_BUTTON "https://example.com/button.png")
-(define-constant MESSAGE_BOARD_BUTTON_TEXT "https://example.com/button-text.png")
-
-;;Define contract owner
+;; Contract owner
 (define-constant CONTRACT_OWNER tx-sender)
 
-;; Define error codes
-(define-constant ERR_NOT_ENOUGH_SBTC (err u1004))
-(define-constant ERR_NOT_CONTRACT_OWNER (err u1005))
-(define-constant ERR_BLOCK_NOT_FOUND (err u1003))
-(define-constant ERR_MESSAGE_NOT_FOUND (err u1006))
-(define-constant ERR_NOT_MESSAGE_AUTHOR (err u1007))
-(define-constant ERR_MESSAGE_TOO_LONG (err u1008))
+;; Error codes
+(define-constant ERR_MESSAGE_TOO_LONG (err u1001))
+(define-constant ERR_MESSAGE_NOT_FOUND (err u1002))
+(define-constant ERR_NOT_MESSAGE_OWNER (err u1003))
+(define-constant ERR_INVALID_RECIPIENT (err u1004))
+(define-constant ERR_MESSAGE_LIMIT_REACHED (err u1005))
+(define-constant ERR_NOT_CONTRACT_OWNER (err u1006))
 
-;; Define a map to store messages
-;; Each message has an ID, content, author, and Bitcoin block height timestamp
+;; Message structure stored in map
+;; Each message has: sender, recipient, content, timestamp, read status
 (define-map messages
   uint
   {
-    message: (string-utf8 280),
-    author: principal,
-    time: uint,
+    sender: principal,
+    recipient: principal,
+    content: (string-utf8 500),
+    timestamp: uint,
+    read: bool,
   }
 )
 
 ;; Counter for total messages
 (define-data-var message-count uint u0)
 
-;; Public function to add a new message for 1 satoshi of sBTC
-;; @format-ignore
-(define-public (add-message (content (string-utf8 280)))
-  (let ((id (+ (var-get message-count) u1)))
-    (try! (restrict-assets? contract-caller 
-      ((with-ft 'SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-token "sbtc-token" u1))
-      (unwrap!
-        ;; Charge 1 satoshi of sBTC from the caller
-        (contract-call? 'SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-token
-          transfer u1 contract-caller current-contract none
-        )
-        ERR_NOT_ENOUGH_SBTC
-      )
-    ))
-    ;; Store the message with current Bitcoin block height
-    (map-set messages id {
-      message: content,
-      author: contract-caller,
-      time: burn-block-height,
-    })
-    ;; Update message count
-    (var-set message-count id)
-    ;; Emit event for the new message
-    (print {
-      event: "[Stacks Dev Quickstart] New Message",
-      message: content,
-      id: id,
-      author: contract-caller,
-      time: burn-block-height,
-    })
-    ;; Return the message ID
-    (ok id)
+;; Map to track message IDs for each recipient (for easy lookup)
+(define-map recipient-messages
+  (principal, uint)
+  bool
+)
+
+;; Map to track message IDs for each sender (for easy lookup)
+(define-map sender-messages
+  (principal, uint)
+  bool
+)
+
+;; Public function to send a message
+(define-public (send-message (recipient principal) (content (string-utf8 500)))
+  (let (
+    (id (+ (var-get message-count) u1))
+    (sender contract-caller)
+  )
+    (begin
+      ;; Validate message length
+      (asserts! (<= (len content) MAX_MESSAGE_LENGTH) ERR_MESSAGE_TOO_LONG)
+      
+      ;; Prevent sending to self
+      (asserts! (not (is-eq sender recipient)) ERR_INVALID_RECIPIENT)
+      
+      ;; Store the message
+      (map-set messages id {
+        sender: sender,
+        recipient: recipient,
+        content: content,
+        timestamp: burn-block-height,
+        read: false,
+      })
+      
+      ;; Track message for recipient
+      (map-set recipient-messages (recipient, id) true)
+      
+      ;; Track message for sender
+      (map-set sender-messages (sender, id) true)
+      
+      ;; Update message count
+      (var-set message-count id)
+      
+      ;; Emit event
+      (print {
+        event: "message-sent",
+        message-id: id,
+        sender: sender,
+        recipient: recipient,
+        timestamp: burn-block-height,
+      })
+      
+      (ok id)
+    )
   )
 )
 
-;; Get the message count
-(define-read-only (get-message-count)
-  (var-get message-count)
+;; Public function to mark a message as read
+(define-public (mark-as-read (message-id uint))
+  (match (map-get? messages message-id)
+    message-tuple (begin
+      ;; Only recipient can mark as read
+      (asserts! (is-eq contract-caller (get recipient message-tuple)) ERR_NOT_MESSAGE_OWNER)
+      
+      ;; Update read status
+      (map-set messages message-id {
+        sender: (get sender message-tuple),
+        recipient: (get recipient message-tuple),
+        content: (get content message-tuple),
+        timestamp: (get timestamp message-tuple),
+        read: true,
+      })
+      
+      ;; Emit event
+      (print {
+        event: "message-read",
+        message-id: message-id,
+        recipient: contract-caller,
+      })
+      
+      (ok true)
+    )
+    ERR_MESSAGE_NOT_FOUND
+  )
 )
 
-;; Withdraw function for contract owner to withdraw accumulated sBTC
-(define-public (withdraw-funds)
-  (begin
-    (asserts! (is-eq tx-sender CONTRACT_OWNER) (err u1005))
-    (let ((balance (unwrap-panic (contract-call? 'SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-token
-        get-balance current-contract
-      ))))
-      (if (> balance u0)
-        (contract-call? 'SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-token
-          transfer balance current-contract CONTRACT_OWNER none
+;; Public function to delete a message (by sender or recipient)
+(define-public (delete-message (message-id uint))
+  (match (map-get? messages message-id)
+    message-tuple (begin
+      ;; Only sender or recipient can delete
+      (asserts! 
+        (or 
+          (is-eq contract-caller (get sender message-tuple))
+          (is-eq contract-caller (get recipient message-tuple))
         )
-        (ok false)
+        ERR_NOT_MESSAGE_OWNER
       )
+      
+      ;; Delete from messages map
+      (map-delete messages message-id)
+      
+      ;; Delete from recipient tracking
+      (map-delete recipient-messages ((get recipient message-tuple), message-id))
+      
+      ;; Delete from sender tracking
+      (map-delete sender-messages ((get sender message-tuple), message-id))
+      
+      ;; Emit event
+      (print {
+        event: "message-deleted",
+        message-id: message-id,
+        deleted-by: contract-caller,
+      })
+      
+      (ok true)
     )
+    ERR_MESSAGE_NOT_FOUND
   )
 )
 
 ;; Read-only function to get a message by ID
-(define-read-only (get-message (id uint))
-  (map-get? messages id)
+(define-read-only (get-message (message-id uint))
+  (map-get? messages message-id)
 )
 
-;; Read-only function to get message author
-(define-read-only (get-message-author (id uint))
-  (match (map-get? messages id)
-    message-tuple (ok (get author message-tuple))
-    (err u1)
+;; Read-only function to get message count
+(define-read-only (get-message-count)
+  (var-get message-count)
+)
+
+;; Read-only function to check if a message exists for a recipient
+(define-read-only (has-message (recipient principal) (message-id uint))
+  (map-get? recipient-messages (recipient, message-id))
+)
+
+;; Read-only function to check if a message was sent by a sender
+(define-read-only (sent-message (sender principal) (message-id uint))
+  (map-get? sender-messages (sender, message-id))
+)
+
+;; Read-only function to get message sender
+(define-read-only (get-message-sender (message-id uint))
+  (match (map-get? messages message-id)
+    message-tuple (ok (get sender message-tuple))
+    (err u1002)
   )
 )
 
-;; Read-only function to get message count at a specific Stacks block height
-(define-read-only (get-message-count-at-block (block uint))
-  (ok (at-block
-    (unwrap! (get-stacks-block-info? header-hash block) ERR_BLOCK_NOT_FOUND)
-    (var-get message-count)
-  ))
-)
-
-;; Public function to edit a message (only by author)
-(define-public (edit-message (id uint) (new-content (string-utf8 280)))
-  (match (map-get? messages id)
-    message-tuple (begin
-      (asserts! (is-eq contract-caller (get author message-tuple)) ERR_NOT_MESSAGE_AUTHOR)
-      (map-set messages id {
-        message: new-content,
-        author: (get author message-tuple),
-        time: (get time message-tuple),
-      })
-      (ok true)
-    )
-    ERR_MESSAGE_NOT_FOUND
-  )
-)
-
-;; Public function to delete a message (by author or contract owner)
-(define-public (delete-message (id uint))
-  (match (map-get? messages id)
-    message-tuple (begin
-      (asserts! 
-        (or 
-          (is-eq contract-caller (get author message-tuple))
-          (is-eq contract-caller CONTRACT_OWNER)
-        )
-        ERR_NOT_MESSAGE_AUTHOR
-      )
-      (map-delete messages id)
-      (ok true)
-    )
-    ERR_MESSAGE_NOT_FOUND
+;; Read-only function to get message recipient
+(define-read-only (get-message-recipient (message-id uint))
+  (match (map-get? messages message-id)
+    message-tuple (ok (get recipient message-tuple))
+    (err u1002)
   )
 )
 
 ;; Read-only function to get message content
-(define-read-only (get-message-content (id uint))
-  (match (map-get? messages id)
-    message-tuple (ok (get message message-tuple))
-    (err u1006)
+(define-read-only (get-message-content (message-id uint))
+  (match (map-get? messages message-id)
+    message-tuple (ok (get content message-tuple))
+    (err u1002)
   )
 )
 
 ;; Read-only function to get message timestamp
-(define-read-only (get-message-time (id uint))
-  (match (map-get? messages id)
-    message-tuple (ok (get time message-tuple))
-    (err u1006)
+(define-read-only (get-message-timestamp (message-id uint))
+  (match (map-get? messages message-id)
+    message-tuple (ok (get timestamp message-tuple))
+    (err u1002)
   )
 )
 
-;; Read-only function to check if a principal is the author of a message
-(define-read-only (is-message-author (id uint) (check-author principal))
-  (match (map-get? messages id)
-    message-tuple (ok (is-eq check-author (get author message-tuple)))
+;; Read-only function to check if message is read
+(define-read-only (is-message-read (message-id uint))
+  (match (map-get? messages message-id)
+    message-tuple (ok (get read message-tuple))
     (ok false)
   )
 )
 
-;; Read-only function to get contract sBTC balance
-(define-read-only (get-contract-balance)
-  (unwrap-panic (contract-call? 'SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-token
-    get-balance current-contract
-  ))
+;; Read-only function to check if user is message sender
+(define-read-only (is-message-sender (message-id uint) (user principal))
+  (match (map-get? messages message-id)
+    message-tuple (ok (is-eq user (get sender message-tuple)))
+    (ok false)
+  )
+)
+
+;; Read-only function to check if user is message recipient
+(define-read-only (is-message-recipient (message-id uint) (user principal))
+  (match (map-get? messages message-id)
+    message-tuple (ok (is-eq user (get recipient message-tuple)))
+    (ok false)
+  )
+)
+
+;; Admin function to get total message count (contract owner only)
+(define-read-only (get-total-messages)
+  (begin
+    (asserts! (is-eq contract-caller CONTRACT_OWNER) ERR_NOT_CONTRACT_OWNER)
+    (var-get message-count)
+  )
 )
